@@ -52,6 +52,12 @@ opt_duration=0; duration=; opt_name=0; name=; opt_pid=0; pid=; ftext=
 opt_time=0; opt_fail=0; opt_file=0; file=
 trap ':' INT QUIT TERM PIPE HUP	# sends execution to end tracing section
 
+syscall_open="open"
+
+if [ "$(uname -m)" = "aarch64" ]; then
+	syscall_open="openat"
+fi
+
 function usage {
 	cat <<-END >&2
 	USAGE: opensnoop [-htx] [-d secs] [-p PID] [-n name] [filename]
@@ -86,10 +92,10 @@ function end {
 	echo "Ending tracing..." 2>/dev/null
 	cd $tracing
 	warn "echo 0 > events/kprobes/getnameprobe/enable"
-	warn "echo 0 > events/syscalls/sys_exit_open/enable"
+	warn "echo 0 > events/syscalls/sys_exit_${syscall_open}/enable"
 	if (( opt_pid )); then
 		warn "echo 0 > events/kprobes/getnameprobe/filter"
-		warn "echo 0 > events/syscalls/sys_exit_open/filter"
+		warn "echo 0 > events/syscalls/sys_exit_${syscall_open}/filter"
 	fi
 	warn "echo -:getnameprobe >> kprobe_events"
 	warn "echo > trace"
@@ -168,7 +174,7 @@ if ! echo $kprobe >> kprobe_events; then
 fi
 if (( opt_pid )); then
 	if ! echo "common_pid==$pid" > events/kprobes/getnameprobe/filter || \
-	    ! echo "common_pid==$pid" > events/syscalls/sys_exit_open/filter
+	    ! echo "common_pid==$pid" > events/syscalls/sys_exit_${syscall_open}/filter
 	then
 	    edie "ERROR: setting -p $pid. Exiting."
 	fi
@@ -176,7 +182,7 @@ fi
 if ! echo 1 > events/kprobes/getnameprobe/enable; then
 	edie "ERROR: enabling kprobe for getname(). Exiting."
 fi
-if ! echo 1 > events/syscalls/sys_exit_open/enable; then
+if ! echo 1 > events/syscalls/sys_exit_${syscall_open}/enable; then
 	edie "ERROR: enabling open() exit tracepoint. Exiting."
 fi
 (( opt_time )) && printf "%-16s " "TIMEs"
@@ -228,8 +234,8 @@ fi ) | $awk -v o=$offset -v opt_name=$opt_name -v name=$name \
 		lastfile[pid] = filename
 	}
 
-	# sys_open()
-	$1 != "#" && $(4+o) == "sys_open" {
+	# sys_'${syscall_open}'()
+	$1 != "#" && $(4+o) == "sys_'${syscall_open}'" {
 		filename = lastfile[pid]
 		delete lastfile[pid]
 		if (opt_file && filename !~ file)
